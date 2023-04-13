@@ -7,6 +7,7 @@
 import pandas as pd
 import requests
 import os
+import hashlib
 
 DBG = False
 
@@ -18,7 +19,7 @@ df = pd.read_csv('fitzpatrick17k.csv')
 #
 # Define the directory to save the images
 #
-save_dir = r'#### INSERT LOCAL FILE PATH #####'
+save_dir = "images"
 
 #
 # Create the directory if it doesn't exist
@@ -64,6 +65,14 @@ for url in df['url']:
         
         with open(filename, 'wb') as f:
             f.write(response.content)
+        
+        with open(filename, 'rb') as f:
+            file_contents = f.read()
+
+        # Get the MD5 hash of the file contents
+        md5_hash = hashlib.md5(file_contents).hexdigest()
+        new_filename = os.path.join(save_dir, md5_hash)
+        os.rename(filename, new_filename)
     else:
         print("no URL in entry ", i, url)
 
