@@ -16,6 +16,8 @@ import copy
 import sys
 from sklearn.model_selection import train_test_split, KFold
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+
 warnings.filterwarnings("ignore")
 
 
@@ -148,7 +150,7 @@ def custom_load(
         num_workers=20,
         train_dir='',
         val_dir='',
-        image_dir='C:\\Grad\\Classes\\CS598\\Paper\\fitzpatrick17k\\images'):
+        image_dir='images'):
     val = pd.read_csv(val_dir)
     train = pd.read_csv(train_dir)
     print("val_dir: ", val_dir)
@@ -239,17 +241,17 @@ if __name__ == '__main__':
                                                 random_state=4242,
                                                 stratify=df.low)
         elif holdout_set == "dermaamin":
-            combo = set(df[df.image_path.str.contains("dermaamin")==True].label.unique()) & set(df[df.image_path.str.contains("dermaamin")==False].label.unique())
+            combo = set(df[df.url.str.contains("dermaamin")==True].label.unique()) & set(df[df.url.str.contains("dermaamin")==False].label.unique())
             df = df[df.label.isin(combo)]
             df["low"] = df['label'].astype('category').cat.codes
-            train = df[df.image_path.str.contains("dermaamin") == False]
-            test = df[df.image_path.str.contains("dermaamin")]
+            train = df[df.url.str.contains("dermaamin") == False]
+            test = df[df.url.str.contains("dermaamin")]
         elif holdout_set == "br":
-            combo = set(df[df.image_path.str.contains("dermaamin")==True].label.unique()) & set(df[df.image_path.str.contains("dermaamin")==False].label.unique())
+            combo = set(df[df.url.str.contains("dermaamin")==True].label.unique()) & set(df[df.url.str.contains("dermaamin")==False].label.unique())
             df = df[df.label.isin(combo)]
             df["low"] = df['label'].astype('category').cat.codes
-            train = df[df.image_path.str.contains("dermaamin")]
-            test = df[df.image_path.str.contains("dermaamin") == False]
+            train = df[df.url.str.contains("dermaamin")]
+            test = df[df.url.str.contains("dermaamin") == False]
             print(train.label.nunique())
             print(test.label.nunique())
         elif holdout_set == "a12":
@@ -312,8 +314,8 @@ if __name__ == '__main__':
             print('{} total trainable parameters'.format(total_trainable_params))
             model_ft = model_ft.to(device)
             model_ft = nn.DataParallel(model_ft)
-            class_weights = torch.FloatTensor(weights)
-            # class_weights = torch.FloatTensor(weights).cuda()
+            # class_weights = torch.FloatTensor(weights)
+            class_weights = torch.FloatTensor(weights).cuda()
             criterion = nn.NLLLoss()
             optimizer_ft = optim.Adam(model_ft.parameters())
             exp_lr_scheduler = lr_scheduler.StepLR(
