@@ -16,6 +16,8 @@ import copy
 import sys
 from sklearn.model_selection import train_test_split, KFold
 
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
+
 warnings.filterwarnings("ignore")
 
 
@@ -49,8 +51,12 @@ def train_model(label, dataloaders, device, dataset_sizes, model,
             running_corrects = 0.0
             # running_total = 0
             print(phase)
+            print("length of dataloaders:", len(dataloaders[phase]))
             # Iterate over data.
+            i = 0
             for batch in dataloaders[phase]:
+                print("iteration ", i)
+                i = i + 1
                 inputs = batch["image"].to(device)
                 labels = batch[label]
                 labels = torch.from_numpy(np.asarray(labels)).to(device)
@@ -125,7 +131,7 @@ class SkinDataset():
         high = self.df.loc[self.df.index[idx], 'high']
         mid = self.df.loc[self.df.index[idx], 'mid']
         low = self.df.loc[self.df.index[idx], 'low']
-        fitzpatrick = self.df.loc[self.df.index[idx], 'fitzpatrick']
+        fitzpatrick_scale = self.df.loc[self.df.index[idx], 'fitzpatrick_scale']
         if self.transform:
             image = self.transform(image)
         sample = {
@@ -134,7 +140,7 @@ class SkinDataset():
                     'mid': mid,
                     'low': low,
                     'hasher': hasher,
-                    'fitzpatrick': fitzpatrick
+                    'fitzpatrick_scale': fitzpatrick_scale
                 }
         return sample
 
@@ -144,9 +150,12 @@ def custom_load(
         num_workers=20,
         train_dir='',
         val_dir='',
-        image_dir='***************** Specify Image Directory Here *************'):
+        image_dir='images'):
     val = pd.read_csv(val_dir)
     train = pd.read_csv(train_dir)
+    print("val_dir: ", val_dir)
+    print("train_dir: ", train_dir)
+    print("image_dir: ", image_dir)
     class_sample_count = np.array(train[label].value_counts().sort_index())
     weight = 1. / class_sample_count
     samples_weight = np.array([weight[t] for t in train[label]])
@@ -210,7 +219,9 @@ if __name__ == '__main__':
         df = pd.read_csv("fitzpatrick17k.csv").sample(1000)
     else:
         df = pd.read_csv("fitzpatrick17k.csv")
-    print(df['fitzpatrick'].value_counts())
+    print("Printing fitzpatrick17k dataframe summary:")
+    print(df.info())
+    print(df['fitzpatrick_scale'].value_counts())
     print("Rows: {}".format(df.shape[0]))
     df["low"] = df['label'].astype('category').cat.codes
     df["mid"] = df['nine_partition_label'].astype('category').cat.codes
@@ -230,22 +241,22 @@ if __name__ == '__main__':
                                                 random_state=4242,
                                                 stratify=df.low)
         elif holdout_set == "dermaamin":
-            combo = set(df[df.image_path.str.contains("dermaamin")==True].label.unique()) & set(df[df.image_path.str.contains("dermaamin")==False].label.unique())
+            combo = set(df[df.url.str.contains("dermaamin")==True].label.unique()) & set(df[df.url.str.contains("dermaamin")==False].label.unique())
             df = df[df.label.isin(combo)]
             df["low"] = df['label'].astype('category').cat.codes
-            train = df[df.image_path.str.contains("dermaamin") == False]
-            test = df[df.image_path.str.contains("dermaamin")]
+            train = df[df.url.str.contains("dermaamin") == False]
+            test = df[df.url.str.contains("dermaamin")]
         elif holdout_set == "br":
-            combo = set(df[df.image_path.str.contains("dermaamin")==True].label.unique()) & set(df[df.image_path.str.contains("dermaamin")==False].label.unique())
+            combo = set(df[df.url.str.contains("dermaamin")==True].label.unique()) & set(df[df.url.str.contains("dermaamin")==False].label.unique())
             df = df[df.label.isin(combo)]
             df["low"] = df['label'].astype('category').cat.codes
-            train = df[df.image_path.str.contains("dermaamin")]
-            test = df[df.image_path.str.contains("dermaamin") == False]
+            train = df[df.url.str.contains("dermaamin")]
+            test = df[df.url.str.contains("dermaamin") == False]
             print(train.label.nunique())
             print(test.label.nunique())
         elif holdout_set == "a12":
-            train = df[(df.fitzpatrick==1)|(df.fitzpatrick==2)]
-            test = df[(df.fitzpatrick!=1)&(df.fitzpatrick!=2)]
+            train = df[(df.fitzpatrick_scale==1)|(df.fitzpatrick_scale==2)]
+            test = df[(df.fitzpatrick_scale!=1)&(df.fitzpatrick_scale!=2)]
             combo = set(train.label.unique()) & set(test.label.unique())
             print(combo)
             train = train[train.label.isin(combo)].reset_index()
@@ -253,16 +264,16 @@ if __name__ == '__main__':
             train["low"] = train['label'].astype('category').cat.codes
             test["low"] = test['label'].astype('category').cat.codes
         elif holdout_set == "a34":
-            train = df[(df.fitzpatrick==3)|(df.fitzpatrick==4)]
-            test = df[(df.fitzpatrick!=3)&(df.fitzpatrick!=4)]
+            train = df[(df.fitzpatrick_scale==3)|(df.fitzpatrick_scale==4)]
+            test = df[(df.fitzpatrick_scale!=3)&(df.fitzpatrick_scale!=4)]
             combo = set(train.label.unique()) & set(test.label.unique())
             train = train[train.label.isin(combo)].reset_index()
             test = test[test.label.isin(combo)].reset_index()
             train["low"] = train['label'].astype('category').cat.codes
             test["low"] = test['label'].astype('category').cat.codes
         elif holdout_set == "a56":
-            train = df[(df.fitzpatrick==5)|(df.fitzpatrick==6)]
-            test = df[(df.fitzpatrick!=5)&(df.fitzpatrick!=6)]
+            train = df[(df.fitzpatrick_scale==5)|(df.fitzpatrick_scale==6)]
+            test = df[(df.fitzpatrick_scale!=5)&(df.fitzpatrick_scale!=6)]
             combo = set(train.label.unique()) & set(test.label.unique())
             train = train[train.label.isin(combo)].reset_index()
             test = test[test.label.isin(combo)].reset_index()
@@ -303,6 +314,7 @@ if __name__ == '__main__':
             print('{} total trainable parameters'.format(total_trainable_params))
             model_ft = model_ft.to(device)
             model_ft = nn.DataParallel(model_ft)
+            # class_weights = torch.FloatTensor(weights)
             class_weights = torch.FloatTensor(weights).cuda()
             criterion = nn.NLLLoss()
             optimizer_ft = optim.Adam(model_ft.parameters())
@@ -342,7 +354,7 @@ if __name__ == '__main__':
                 for i, batch in enumerate(dataloaders['val']):
                     inputs = batch["image"].to(device)
                     classes = batch[label].to(device)
-                    fitzpatrick = batch["fitzpatrick"]
+                    fitzpatrick = batch["fitzpatrick_scale"]
                     hasher = batch["hasher"]
                     outputs = model(inputs.float())
                     probability = outputs
@@ -373,7 +385,7 @@ if __name__ == '__main__':
                 df_x=pd.DataFrame({
                                     "hasher": flatten(hasher_list),
                                     "label": flatten(labels_list),
-                                    "fitzpatrick": flatten(fitzpatrick_list),
+                                    "fitzpatrick_scale": flatten(fitzpatrick_list),
                                     "prediction_probability": flatten(p_list),
                                     "prediction": flatten(prediction_list),
                                     "d1": d1,
@@ -391,7 +403,7 @@ if __name__ == '__main__':
                 df_x=pd.DataFrame({
                                     "hasher": flatten(hasher_list),
                                     "label": flatten(labels_list),
-                                    "fitzpatrick": flatten(fitzpatrick_list),
+                                    "fitzpatrick_scale": flatten(fitzpatrick_list),
                                     "prediction_probability": flatten(p_list),
                                     "prediction": flatten(prediction_list)})
             df_x.to_csv("results_{}_{}_{}.csv".format(n_epochs, label, holdout_set),
