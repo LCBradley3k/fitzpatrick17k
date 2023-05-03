@@ -228,185 +228,143 @@ if __name__ == '__main__':
     df["high"] = df['three_partition_label'].astype('category').cat.codes
     df["hasher"] = df["md5hash"]
 
-    for holdout_set in ["expert_select","random_holdout", "a12", "a34","a56", "dermaamin","br"]:
-        if holdout_set == "expert_select":
-            df2 = df
-            train = df2[df2.qc.isnull()]
-            test = df2[df2.qc=="1 Diagnostic"]
-        elif holdout_set == "random_holdout":
-            train, test, y_train, y_test = train_test_split(
-                                                df,
-                                                df.low,
-                                                test_size=0.2,
-                                                random_state=4242,
-                                                stratify=df.low)
-        elif holdout_set == "dermaamin":
-            combo = set(df[df.url.str.contains("dermaamin")==True].label.unique()) & set(df[df.url.str.contains("dermaamin")==False].label.unique())
-            df = df[df.label.isin(combo)]
-            df["low"] = df['label'].astype('category').cat.codes
-            train = df[df.url.str.contains("dermaamin") == False]
-            test = df[df.url.str.contains("dermaamin")]
-        elif holdout_set == "br":
-            combo = set(df[df.url.str.contains("dermaamin")==True].label.unique()) & set(df[df.url.str.contains("dermaamin")==False].label.unique())
-            df = df[df.label.isin(combo)]
-            df["low"] = df['label'].astype('category').cat.codes
-            train = df[df.url.str.contains("dermaamin")]
-            test = df[df.url.str.contains("dermaamin") == False]
-            print(train.label.nunique())
-            print(test.label.nunique())
-        elif holdout_set == "a12":
-            train = df[(df.fitzpatrick_scale==1)|(df.fitzpatrick_scale==2)]
-            test = df[(df.fitzpatrick_scale!=1)&(df.fitzpatrick_scale!=2)]
-            combo = set(train.label.unique()) & set(test.label.unique())
-            print(combo)
-            train = train[train.label.isin(combo)].reset_index()
-            test = test[test.label.isin(combo)].reset_index()
-            train["low"] = train['label'].astype('category').cat.codes
-            test["low"] = test['label'].astype('category').cat.codes
-        elif holdout_set == "a34":
-            train = df[(df.fitzpatrick_scale==3)|(df.fitzpatrick_scale==4)]
-            test = df[(df.fitzpatrick_scale!=3)&(df.fitzpatrick_scale!=4)]
-            combo = set(train.label.unique()) & set(test.label.unique())
-            train = train[train.label.isin(combo)].reset_index()
-            test = test[test.label.isin(combo)].reset_index()
-            train["low"] = train['label'].astype('category').cat.codes
-            test["low"] = test['label'].astype('category').cat.codes
-        elif holdout_set == "a56":
-            train = df[(df.fitzpatrick_scale==5)|(df.fitzpatrick_scale==6)]
-            test = df[(df.fitzpatrick_scale!=5)&(df.fitzpatrick_scale!=6)]
-            combo = set(train.label.unique()) & set(test.label.unique())
-            train = train[train.label.isin(combo)].reset_index()
-            test = test[test.label.isin(combo)].reset_index()
-            train["low"] = train['label'].astype('category').cat.codes
-            test["low"] = test['label'].astype('category').cat.codes
-        print(test.shape)
-        print(test.shape)
-        train_path = "temp_train.csv"
-        test_path = "temp_test.csv"
-        train.to_csv(train_path, index=False)
-        test.to_csv(test_path, index=False)
-        print("Training Shape: {}, Test Shape: {} \n".format(
-        train.shape,
-        test.shape)
-        )
-        for indexer, label in enumerate(["low"]):
-            print(label)
-            weights = np.array(max(train[label].value_counts())/train[label].value_counts().sort_index())
-            label_codes = sorted(list(train[label].unique()))
-            dataloaders, dataset_sizes = custom_load(
-                256,
-                20,
-                "{}".format(train_path),
-                "{}".format(test_path))
-            model_ft = models.vgg16(pretrained=True)
-            for param in model_ft.parameters():
-                param.requires_grad = False
-            model_ft.classifier[6] = nn.Sequential(
-                        nn.Linear(4096, 256), 
-                        nn.ReLU(), 
-                        nn.Dropout(0.4),
-                        nn.Linear(256, len(label_codes)),                   
-                        nn.LogSoftmax(dim=1))
-            total_params = sum(p.numel() for p in model_ft.parameters())
-            print('{} total parameters'.format(total_params))
-            total_trainable_params = sum(
-                p.numel() for p in model_ft.parameters() if p.requires_grad)
-            print('{} total trainable parameters'.format(total_trainable_params))
-            model_ft = model_ft.to(device)
-            model_ft = nn.DataParallel(model_ft)
-            # class_weights = torch.FloatTensor(weights)
-            class_weights = torch.FloatTensor(weights).cuda()
-            criterion = nn.NLLLoss()
-            optimizer_ft = optim.Adam(model_ft.parameters())
-            exp_lr_scheduler = lr_scheduler.StepLR(
-                optimizer_ft,
-                step_size=7,
-                gamma=0.1)
-            print("\nTraining classifier for {}........ \n".format(label))
-            print("....... processing ........ \n")
-            model_ft, training_results = train_model(
-                label,
-                dataloaders, device,
-                dataset_sizes, model_ft,
-                criterion, optimizer_ft,
-                exp_lr_scheduler, n_epochs)
-            print("Training Complete")
-            torch.save(model_ft.state_dict(), "model_path_{}_{}_{}.pth".format(n_epochs, label, holdout_set))
-            print("gold")
-            training_results.to_csv("training_{}_{}_{}.csv".format(n_epochs, label, holdout_set))
-            model = model_ft.eval()
-            loader = dataloaders["val"]
-            prediction_list = []
-            fitzpatrick_list = []
-            hasher_list = []
-            labels_list = []
-            p_list = []
-            topk_p = []
-            topk_n = []
-            d1 = []
-            d2 = []
-            d3 = []
-            p1 = []
-            p2 = []
-            p3 = []
-            with torch.no_grad():
-                running_corrects = 0
-                for i, batch in enumerate(dataloaders['val']):
-                    inputs = batch["image"].to(device)
-                    classes = batch[label].to(device)
-                    fitzpatrick = batch["fitzpatrick_scale"]
-                    hasher = batch["hasher"]
-                    outputs = model(inputs.float())
-                    probability = outputs
-                    ppp, preds = torch.topk(probability, 1)
-                    if label == "low":
-                        _, preds5 = torch.topk(probability, 3)
-                        topk_p.append(np.exp(_.cpu()).tolist())
-                        topk_n.append(preds5.cpu().tolist())
-                    running_corrects += torch.sum(preds == classes.data)
-                    p_list.append(ppp.cpu().tolist())
-                    prediction_list.append(preds.cpu().tolist())
-                    labels_list.append(classes.tolist())
-                    fitzpatrick_list.append(fitzpatrick.tolist())
-                    hasher_list.append(hasher)
-                acc = float(running_corrects)/float(dataset_sizes['val'])
-            if label == "low":
-                for j in topk_n:
-                    for i in j:
-                        d1.append(i[0])
-                        d2.append(i[1])
-                        d3.append(i[2])
-                for j in topk_p:
-                    for i in j:
-                        print(i)
-                        p1.append(i[0])
-                        p2.append(i[1])
-                        p3.append(i[2])
-                df_x=pd.DataFrame({
-                                    "hasher": flatten(hasher_list),
-                                    "label": flatten(labels_list),
-                                    "fitzpatrick_scale": flatten(fitzpatrick_list),
-                                    "prediction_probability": flatten(p_list),
-                                    "prediction": flatten(prediction_list),
-                                    "d1": d1,
-                                    "d2": d2,
-                                    "d3": d3,
-                                    "p1": p1,
-                                    "p2": p2,
-                                    "p3": p3})
-            else:
-                print(len(flatten(hasher_list)))
-                print(len(flatten(labels_list)))
-                print(len(flatten(fitzpatrick_list)))
-                print(len(flatten(p_list)))
-                print(len(flatten(prediction_list)))
-                df_x=pd.DataFrame({
-                                    "hasher": flatten(hasher_list),
-                                    "label": flatten(labels_list),
-                                    "fitzpatrick_scale": flatten(fitzpatrick_list),
-                                    "prediction_probability": flatten(p_list),
-                                    "prediction": flatten(prediction_list)})
-            df_x.to_csv("results_{}_{}_{}.csv".format(n_epochs, label, holdout_set),
-                            index=False)
-            print("\n Accuracy: {} \n".format(acc))
-        print("done")
+    holdout_set = "random_holdout"
+
+    train, test, y_train, y_test = train_test_split(
+                                            df,
+                                            df.low,
+                                            test_size=0.3,
+                                            random_state=4242,
+                                            stratify=df.low)
+
+    print(test.shape)
+    print(test.shape)
+    train_path = "temp_train.csv"
+    test_path = "temp_test.csv"
+    train.to_csv(train_path, index=False)
+    test.to_csv(test_path, index=False)
+    print("Training Shape: {}, Test Shape: {} \n".format(
+    train.shape,
+    test.shape)
+    )
+    for indexer, label in enumerate(["low"]):
+        print(label)
+        weights = np.array(max(train[label].value_counts())/train[label].value_counts().sort_index())
+        label_codes = sorted(list(train[label].unique()))
+        dataloaders, dataset_sizes = custom_load(
+            256,
+            20,
+            "{}".format(train_path),
+            "{}".format(test_path))
+        model_ft = models.vgg16(pretrained=True)
+        for param in model_ft.parameters():
+            param.requires_grad = False
+        model_ft.classifier[6] = nn.Sequential(
+                    nn.Linear(4096, 256), 
+                    nn.ReLU(), 
+                    nn.Dropout(0.4),
+                    nn.Linear(256, len(label_codes)),                   
+                    nn.LogSoftmax(dim=1))
+        total_params = sum(p.numel() for p in model_ft.parameters())
+        print('{} total parameters'.format(total_params))
+        total_trainable_params = sum(
+            p.numel() for p in model_ft.parameters() if p.requires_grad)
+        print('{} total trainable parameters'.format(total_trainable_params))
+        model_ft = model_ft.to(device)
+        model_ft = nn.DataParallel(model_ft)
+        # class_weights = torch.FloatTensor(weights)
+        class_weights = torch.FloatTensor(weights).cuda()
+        criterion = nn.NLLLoss()
+        optimizer_ft = optim.Adam(model_ft.parameters())
+        exp_lr_scheduler = lr_scheduler.StepLR(
+            optimizer_ft,
+            step_size=7,
+            gamma=0.1)
+        print("\nTraining classifier for {}........ \n".format(label))
+        print("....... processing ........ \n")
+        model_ft, training_results = train_model(
+            label,
+            dataloaders, device,
+            dataset_sizes, model_ft,
+            criterion, optimizer_ft,
+            exp_lr_scheduler, n_epochs)
+        print("Training Complete")
+        torch.save(model_ft.state_dict(), "model_path_{}_{}_{}.pth".format(n_epochs, label, holdout_set))
+        print("gold")
+        training_results.to_csv("training_{}_{}_{}.csv".format(n_epochs, label, holdout_set))
+        model = model_ft.eval()
+        loader = dataloaders["val"]
+        prediction_list = []
+        fitzpatrick_list = []
+        hasher_list = []
+        labels_list = []
+        p_list = []
+        topk_p = []
+        topk_n = []
+        d1 = []
+        d2 = []
+        d3 = []
+        p1 = []
+        p2 = []
+        p3 = []
+        with torch.no_grad():
+            running_corrects = 0
+            for i, batch in enumerate(dataloaders['val']):
+                inputs = batch["image"].to(device)
+                classes = batch[label].to(device)
+                fitzpatrick = batch["fitzpatrick_scale"]
+                hasher = batch["hasher"]
+                outputs = model(inputs.float())
+                probability = outputs
+                ppp, preds = torch.topk(probability, 1)
+                if label == "low":
+                    _, preds5 = torch.topk(probability, 3)
+                    topk_p.append(np.exp(_.cpu()).tolist())
+                    topk_n.append(preds5.cpu().tolist())
+                running_corrects += torch.sum(preds == classes.data)
+                p_list.append(ppp.cpu().tolist())
+                prediction_list.append(preds.cpu().tolist())
+                labels_list.append(classes.tolist())
+                fitzpatrick_list.append(fitzpatrick.tolist())
+                hasher_list.append(hasher)
+            acc = float(running_corrects)/float(dataset_sizes['val'])
+        if label == "low":
+            for j in topk_n:
+                for i in j:
+                    d1.append(i[0])
+                    d2.append(i[1])
+                    d3.append(i[2])
+            for j in topk_p:
+                for i in j:
+                    print(i)
+                    p1.append(i[0])
+                    p2.append(i[1])
+                    p3.append(i[2])
+            df_x=pd.DataFrame({
+                                "hasher": flatten(hasher_list),
+                                "label": flatten(labels_list),
+                                "fitzpatrick_scale": flatten(fitzpatrick_list),
+                                "prediction_probability": flatten(p_list),
+                                "prediction": flatten(prediction_list),
+                                "d1": d1,
+                                "d2": d2,
+                                "d3": d3,
+                                "p1": p1,
+                                "p2": p2,
+                                "p3": p3})
+        else:
+            print(len(flatten(hasher_list)))
+            print(len(flatten(labels_list)))
+            print(len(flatten(fitzpatrick_list)))
+            print(len(flatten(p_list)))
+            print(len(flatten(prediction_list)))
+            df_x=pd.DataFrame({
+                                "hasher": flatten(hasher_list),
+                                "label": flatten(labels_list),
+                                "fitzpatrick_scale": flatten(fitzpatrick_list),
+                                "prediction_probability": flatten(p_list),
+                                "prediction": flatten(prediction_list)})
+        df_x.to_csv("results_{}_{}_{}.csv".format(n_epochs, label, holdout_set),
+                        index=False)
+        print("\n Accuracy: {} \n".format(acc))
+    print("done")
