@@ -233,7 +233,7 @@ if __name__ == '__main__':
     train, test, y_train, y_test = train_test_split(
                                             df,
                                             df.low,
-                                            test_size=0.3,
+                                            test_size=0.5,
                                             random_state=4242,
                                             stratify=df.low)
 
@@ -256,15 +256,18 @@ if __name__ == '__main__':
             20,
             "{}".format(train_path),
             "{}".format(test_path))
-        model_ft = models.vgg16(pretrained=True)
+        model_ft = models.resnet18(pretrained=True)
         for param in model_ft.parameters():
             param.requires_grad = False
-        model_ft.classifier[6] = nn.Sequential(
-                    nn.Linear(4096, 256), 
-                    nn.ReLU(), 
-                    nn.Dropout(0.4),
-                    nn.Linear(256, len(label_codes)),                   
-                    nn.LogSoftmax(dim=1))
+        num_ftrs = model_ft.fc.in_features
+        model_ft.fc = nn.Sequential(
+                        nn.Linear(num_ftrs, 1024), 
+                        nn.ReLU(),
+                        nn.Linear(num_ftrs, 256), 
+                        nn.ReLU(),
+                        nn.Dropout(0.2),
+                        nn.Linear(256, len(label_codes)),                   
+                        nn.LogSoftmax(dim=1))
         total_params = sum(p.numel() for p in model_ft.parameters())
         print('{} total parameters'.format(total_params))
         total_trainable_params = sum(
